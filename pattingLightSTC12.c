@@ -3,6 +3,8 @@ STC12C2052AD配合振动开关SW-180xxP控制4种不同颜色的LED灯；
 SW-180xxP振动开关受到一次敲击用于切换LED灯顺次亮灭；
 受到两次敲击使得MCU进入掉电模式，此时关闭所有LED灯；
 掉电模式下敲击一下唤醒MCU，恢复到上次关闭的状态
+
+本程序为最终主程序，其他c文件都是供学习与参考
 **************************************************************/
 #include <STC12C2052AD.H>
 
@@ -39,12 +41,12 @@ void main(void){
         if (!KEY_INPUT){ // 首次检测到低电平
             judging_time = 0;
             Timer0_Init();
-            while (judging_time < PAT_INTERVAL){ // 第一次检测到低电平的60ms之内等待即可
+            while (judging_time < PAT_INTERVAL){ // 第一次检测到低电平的一段时间（取决于PAT_INTERVAL变量）之内等待即可
  
             } 
             while (judging_time < SINGLE_CONFIRM){
 
-                if (!KEY_INPUT){ // 当时间大于60且小于250ms，如果检测到低电平，就是有第二次敲击
+                if (!KEY_INPUT){ // 当时间大于PAT_INTERVAL且小于SINGLE_CONFIRM，如果检测到低电平，就是有第二次敲击
                     key_value = D_KEY;
                 }
             }
@@ -70,9 +72,12 @@ void delay_ms(unsigned int a){
 
 void next_LED(void){ // 关闭当前灯，打开下一个LED灯
     unsigned char port_temp = ~PORT1; // 采用灌电流的方式点亮LED，即点亮的灯的I/O为低电平
-    if ((port_temp > 0x00) && (port_temp < 0x40)){ 
+    if ((port_temp > 0x00) && (port_temp < 0x40)){  // &&逻辑与
         port_temp = port_temp << 2; // 如果当前P16不是低电平，取反之后向左移两位，再取反
         PORT1 = ~port_temp;
+    }
+    else if(port_temp == 0x40){ // 如果当前是P16口的灯亮
+        PORT1 = 0x00; // 则所有灯亮
     }
     else{
         PORT1 = 0xfe; // P11设置为低电平
@@ -81,7 +86,8 @@ void next_LED(void){ // 关闭当前灯，打开下一个LED灯
 
 void power_down(void){
     PORT1 = 0x00;
-    delay_ms(1000); // 所有灯亮1s
+    delay_ms(1000); // 所有灯亮约1s
+    IE0 = 0; // 在允许外部中断之前，先将外部中断标志位手动置0，保证在允许外部中断之后直接进入外部中断处理程序
     EX0 = 1; // 允许外部中断0，用来将MCU从掉电模式唤醒
     IT0 = 0; // INT0的触发模式，0为低电平触发
     PORT1 = 0xFF; // 所有灯灭
@@ -112,10 +118,10 @@ void time0(void) interrupt 1 {
     TR0 = 1; // 手动重载定时器0
 }
 
-void INTE0(void) interrupt 0 { // 外部中断0的处理程序
+void INTE0(void) interrupt 0 { // 外部中断0的处理程序，外部中断程序响应之后，外部中断标志位IE0首先被置0
     PORT1 = 0xFB; 
     delay_ms(500); // P12灯亮半秒
-    EX0 = 0; // 重新禁止外部中断
+    EX0 = 0; // 重新禁止外部中断，注意：禁止外部中断之后，外部中断位仍然可能由于按键的抖动等原因而被置1
     EA = 1; // 允许总中断
     PORT1 = 0xFE; // p10口的灯亮，表示从掉电模式中恢复
 }
